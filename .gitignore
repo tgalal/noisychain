@@ -1,0 +1,13 @@
+*.pyc
+*.class
+todo
+*.egg-info
+tp
+dist
+build
+.idea
+.tox
+*.iml
+.vim
+.vimrc
+dissononce
