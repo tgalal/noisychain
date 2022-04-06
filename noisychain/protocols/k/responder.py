@@ -9,11 +9,13 @@ import logging
 
 from ...channels import derive_channel
 from ... import ethutils
+from .. import MAGIC
+from . import PROTOCOL_ID
 
 logger = logging.getLogger(__name__)
 
 
-class KInitiatorProtocol:
+class KResponderProtocol:
     def __init__(self,
             local_static: KeyPair,
             remote_static: PublicKey):
@@ -21,15 +23,9 @@ class KInitiatorProtocol:
         self._local_static = local_static
         self._remote_static = remote_static
 
-        ############## Noise init
-        self._protocol = NoiseProtocolFactory().get_noise_protocol(
-                "Noise_K_secp256k1_AESGCM_SHA256")
-        self._handshakestate = self._protocol.create_handshakestate()
-        self._handshakestate.initialize(
-                KHandshakePattern(), False, b'',
-                s=self._local_static, rs=self._remote_static)
-
-        logger.debug("Initialized K Protocol for Responder")
+    @property
+    def channel(self):
+        return self._channel
 
     def setup(self):
         logger.debug("setup()")
@@ -37,28 +33,26 @@ class KInitiatorProtocol:
                 self._remote_static, 0)
         logger.debug("Created channel %s" % self._channel)
 
-    async def recv(self):
-        logger.debug("send()")
-        payload_buffer = bytearray()
-        self._handshakestate.write_message(self._message, payload_buffer)
-        local_ephemeral = self._handshakestate.e
-        local_ephemeral_address = ethutils.pubkey_to_address(
-                local_ephemeral.public)
-        
-        tx, signed = await ethutils.create_and_sign_transaction(
-                key=local_ephemeral.private,
-                to= self._channel,
-                data=payload_buffer,
-                value=0
-            )
+    async def recv(self, payload: bytes):
+        logger.debug("recv()")
+        assert payload.startswith(MAGIC)
+        assert payload[len(MAGIC)] == PROTOCOL_ID
 
-        estimated_cost = tx['gas'] * tx['gasPrice']
-        logger.debug(f"Payload is {len(payload_buffer)} bytes")
-        logger.debug(
-            f"Estimated cost is {Web3.fromWei(estimated_cost, 'ether')} ether")
+        # Strip magic and paload id
+        payload = payload[len(MAGIC) + 1:]
 
-        await self._funder.fund(local_ephemeral_address, estimated_cost)
-        await ethutils.send(signed)
+        ############## Noise init
+        protocol = NoiseProtocolFactory().get_noise_protocol(
+                "Noise_K_secp256k1_AESGCM_SHA256")
+        handshakestate = protocol.create_handshakestate()
+        handshakestate.initialize(KHandshakePattern(), False, b'',
+                s=self._local_static, rs=self._remote_static)
 
-        logger.info("Sent")
+        logger.debug("Initialized K Protocol for Responder")
+
+        # Decrypt payload.
+        message_buffer = bytearray()
+        handshakestate.read_message(payload, message_buffer)
+
+        return bytes(message_buffer)
 
