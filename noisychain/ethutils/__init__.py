@@ -11,6 +11,8 @@ import ecdsa
 from typing import Tuple
 from web3 import Web3
 from web3.eth import AsyncEth
+from eth_account._utils.signing import to_standard_v, extract_chain_id
+from eth_account._utils.legacy_transactions import ALLOWED_TRANSACTION_KEYS, serializable_unsigned_transaction_from_dict
 import asyncio
 import json
 
@@ -23,6 +25,32 @@ w3 = Web3(Web3.HTTPProvider('http://192.168.178.11:7545'))
 async def get_balance(address: str) -> int:
     result = w3.eth.get_balance(address)
     return result
+
+async def address_to_public(address: str) -> PublicKey | None:
+    logger.debug(f"address_to_public({address})")
+    blocks = w3.eth.get_block_number()
+    for i in range(blocks, 0, -1):
+        block = w3.eth.get_block(i)
+        for txhash in block["transactions"]:
+            t = w3.eth.get_transaction(txhash)
+            if t["from"] == address:
+                logger.debug("Located relevant tx:"
+                        f"{binascii.hexlify(t.hash).decode()}")
+                s = w3.eth.account._keys.Signature(
+                        vrs=(to_standard_v(
+                                extract_chain_id(t.v)[1]),
+                    w3.toInt(t.r), w3.toInt(t.s)))
+
+                tt = { k:t[k] for k in ALLOWED_TRANSACTION_KEYS - {'chainId', 'data'}}
+                tt['data']=t.input
+                tt['chainId']=extract_chain_id(t.v)[0]
+                ut=serializable_unsigned_transaction_from_dict(tt)
+
+                pubkey = s.recover_public_key_from_msg_hash(ut.hash())
+                result = PublicKey(pubkey.to_compressed_bytes())
+
+                assert pubkey_to_address(result) == address
+                return result
 
 def private_to_public(privatekey: PrivateKey) -> PublicKey:
     return SECP256K1DH().generate_keypair(privatekey).public
@@ -61,7 +89,7 @@ async def create_and_sign_transaction(
         )
 
     gas_estimate = w3.eth.estimate_gas(tx)
-    tx['gas'] = gas_estimate 
+    tx['gas'] = gas_estimate
 
     # print(json.dumps(tx, indent=2))
 
