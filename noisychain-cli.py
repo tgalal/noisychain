@@ -17,6 +17,7 @@ import noisychain
 from noisychain.protocols import MAGIC
 from noisychain.protocols import k
 from noisychain.protocols.k.initiator import KInitiatorProtocol
+from noisychain.protocols.k.responder import KResponderProtocol
 from noisychain import channels
 
 """
@@ -35,7 +36,7 @@ RECV_EXAMPLES = ""
 EXAMPLES = ()
 
 PROTOCOLS = {
-    "K" : (KInitiatorProtocol,)
+    "K" : (KInitiatorProtocol, KResponderProtocol)
 };
 
 def read_data(source, fmt='raw', accept_stdin=False):
@@ -215,6 +216,27 @@ if __name__ == '__main__':
     group.add_argument('-a', '--address', action='store')
 
     channel_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
+
+    #####################
+
+    recv_parser = subparsers.add_parser('recv',
+            aliases=['r'],
+            epilog=SEND_EXAMPLES,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    recv_parser.set_defaults(func=handle_recv)
+    recv_parser.add_argument('-d', '--debug', action="store_true")
+
+    recv_parser.add_argument('-k', '--key', action='store', required=True)
+    recv_parser.add_argument('-r', '--role', action='store',
+            choices=('initiator', 'responder'), required=True)
+    recv_parser.add_argument('-p', '--protocol', action='store',
+            choices=PROTOCOLS.keys(), required=True)
+
+    group = recv_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-K', '--pubkey', action='store')
+    group.add_argument('-a', '--address', action='store')
+
+    recv_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
 
     args = parser.parse_args()
     if args.debug:

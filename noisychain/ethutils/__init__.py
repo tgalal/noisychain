@@ -15,6 +15,7 @@ from eth_account._utils.signing import to_standard_v, extract_chain_id
 from eth_account._utils.legacy_transactions import ALLOWED_TRANSACTION_KEYS, serializable_unsigned_transaction_from_dict
 import asyncio
 import json
+from typing import Tuple, List
 
 logger = logging.getLogger(__name__)
 
@@ -26,31 +27,56 @@ async def get_balance(address: str) -> int:
     result = w3.eth.get_balance(address)
     return result
 
-async def address_to_public(address: str) -> PublicKey | None:
-    logger.debug(f"address_to_public({address})")
+async def get_transactions(from_address=None, to_address=None, start_block=0,
+        only_first=False) -> List:
+    logger.debug(f"get_transaction(from_address={from_address}, "
+                 f"to_address={to_address}, start_block={start_block}, "
+                 f"only_first={only_first})")
     blocks = w3.eth.get_block_number()
-    for i in range(blocks, 0, -1):
+    output = []
+    for i in range(start_block, blocks + 1):
         block = w3.eth.get_block(i)
+
         for txhash in block["transactions"]:
             t = w3.eth.get_transaction(txhash)
-            if t["from"] == address:
-                logger.debug("Located relevant tx:"
-                        f"{binascii.hexlify(t.hash).decode()}")
-                s = w3.eth.account._keys.Signature(
-                        vrs=(to_standard_v(
-                                extract_chain_id(t.v)[1]),
-                    w3.toInt(t.r), w3.toInt(t.s)))
+            found = True
 
-                tt = { k:t[k] for k in ALLOWED_TRANSACTION_KEYS - {'chainId', 'data'}}
-                tt['data']=t.input
-                tt['chainId']=extract_chain_id(t.v)[0]
-                ut=serializable_unsigned_transaction_from_dict(tt)
+            if from_address:
+                found = found and t["from"] == from_address
+            if to_address:
+                found = found and t["to"] == to_address
 
-                pubkey = s.recover_public_key_from_msg_hash(ut.hash())
-                result = PublicKey(pubkey.to_compressed_bytes())
+            if found:
+                if only_first:
+                    return [t]
+                output.append(t)
+    return output
 
-                assert pubkey_to_address(result) == address
-                return result
+async def address_to_public(address: str) -> PublicKey | None:
+    logger.debug(f"address_to_public({address})")
+
+    transactions = await get_transactions(from_address=address, only_first=True)
+    if not len(transactions):
+        logger.info(f"No transactions were found for address {address}")
+        return None
+
+    t = transactions[0]
+    logger.debug("Located relevant tx:{binascii.hexlify(t.hash).decode()}")
+    s = w3.eth.account._keys.Signature(
+            vrs=(to_standard_v(
+                    extract_chain_id(t.v)[1]),
+        w3.toInt(t.r), w3.toInt(t.s)))
+
+    tt = { k:t[k] for k in ALLOWED_TRANSACTION_KEYS - {'chainId', 'data'}}
+    tt['data']=t.input
+    tt['chainId']=extract_chain_id(t.v)[0]
+    ut=serializable_unsigned_transaction_from_dict(tt)
+
+    pubkey = s.recover_public_key_from_msg_hash(ut.hash())
+    result = PublicKey(pubkey.to_compressed_bytes())
+
+    assert pubkey_to_address(result) == address
+    return result
 
 def private_to_public(privatekey: PrivateKey) -> PublicKey:
     return SECP256K1DH().generate_keypair(privatekey).public
@@ -94,8 +120,6 @@ async def create_and_sign_transaction(
     # print(json.dumps(tx, indent=2))
 
     signed = w3.eth.account.sign_transaction(tx, key.data)
-    # w3.eth.send_raw_transaction(signed.rawTransaction)
-    # return binascii.hexlify(signed.hash)
     return tx, signed
 
 def create_transaction(
@@ -107,12 +131,8 @@ def create_transaction(
     return {
         'to': to,
         'value': value,
-        'data': binascii.hexlify(data).decode(),
+        'data': data,
         'gasPrice': w3.eth.gasPrice,
-        # 'maxFeePerGas': 2000000000,
-        # 'maxPriorityFeePerGas': 1000000000,
-        # 'type': '0x2',  # the type is optional and, if omitted, will be
-        # interpreted based on the provided transaction parameters
         'nonce': nonce,
         'chainId': chain_id
         }
