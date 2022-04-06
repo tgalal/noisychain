@@ -1,3 +1,4 @@
+import binascii
 from dissononce.extras.dh.experimental.secp256k1.secp256k1 \
         import SECP256K1DH
 from dissononce.extras.dh.experimental.secp256k1.keypair import KeyPair
@@ -42,7 +43,7 @@ class KInitiatorProtocol:
                 self._remote_static, 0)
         logger.debug("Created channel %s" % self._channel)
 
-    async def send(self):
+    async def send(self) -> str | None:
         logger.debug("send()")
         payload_buffer = bytearray()
         self._handshakestate.write_message(self._message, payload_buffer)
@@ -66,4 +67,5 @@ class KInitiatorProtocol:
         await ethutils.send(signed)
 
         logger.info("Sent")
+        return binascii.hexlify(signed.hash).decode()
 
