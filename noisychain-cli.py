@@ -17,6 +17,7 @@ import noisychain
 from noisychain.protocols import MAGIC
 from noisychain.protocols import k
 from noisychain.protocols.k.initiator import KInitiatorProtocol
+from noisychain import channels
 
 """
 noisychain-cli send --role initiator --to-addr address --key /path/to/key --protocol k
@@ -198,6 +199,22 @@ if __name__ == '__main__':
     group.add_argument('-a', '--address', action='store')
 
     send_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
+
+    #####################
+
+    channel_parser = subparsers.add_parser('channel',
+            aliases=['c'],
+            epilog=CHANNEL_EXAMPLES,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    channel_parser.set_defaults(func=handle_channel)
+    channel_parser.add_argument('-d', '--debug', action="store_true")
+
+    channel_parser.add_argument('-k', '--key', action='store', required=True)
+    group = channel_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-K', '--pubkey', action='store')
+    group.add_argument('-a', '--address', action='store')
+
+    channel_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
 
     args = parser.parse_args()
     if args.debug:
