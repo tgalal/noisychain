@@ -50,7 +50,7 @@ class KInitiatorProtocol:
         local_ephemeral = self._handshakestate.e
         local_ephemeral_address = ethutils.pubkey_to_address(
                 local_ephemeral.public)
-        
+
         tx, signed = await ethutils.create_and_sign_transaction(
                 key=local_ephemeral.private,
                 to= self._channel,
