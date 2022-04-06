@@ -11,6 +11,8 @@ import logging
 from ...channels import derive_channel
 from ... import ethutils
 from ...ethutils.funding import ExternalFunder, InternalFunder
+from . import PROTOCOL_ID
+from .. import MAGIC
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +25,6 @@ class KInitiatorProtocol:
         self._local_static = local_static
         self._remote_static = remote_static
         self._message = message
-
-        ############## Noise init
-        self._protocol = NoiseProtocolFactory().get_noise_protocol(
-                "Noise_K_secp256k1_AESGCM_SHA256")
-        self._handshakestate = self._protocol.create_handshakestate()
-        self._handshakestate.initialize(
-                KHandshakePattern(), True, b'',
-                s=self._local_static, rs=self._remote_static)
 
         ############## Funder init
         self._funder = InternalFunder(self._local_static.private)
@@ -45,15 +39,25 @@ class KInitiatorProtocol:
 
     async def send(self) -> str | None:
         logger.debug("send()")
+        ############## Noise init
+        protocol = NoiseProtocolFactory().get_noise_protocol(
+                "Noise_K_secp256k1_AESGCM_SHA256")
+        handshakestate = protocol.create_handshakestate()
+        handshakestate.initialize(KHandshakePattern(), True, b'',
+                s=self._local_static, rs=self._remote_static)
+        ######################
+
         payload_buffer = bytearray()
-        self._handshakestate.write_message(self._message, payload_buffer)
-        local_ephemeral = self._handshakestate.e
+        handshakestate.write_message(self._message, payload_buffer)
+        payload_buffer = MAGIC + PROTOCOL_ID.to_bytes(1, 'big') + payload_buffer
+
+        local_ephemeral = handshakestate.e
         local_ephemeral_address = ethutils.pubkey_to_address(
                 local_ephemeral.public)
 
         tx, signed = await ethutils.create_and_sign_transaction(
                 key=local_ephemeral.private,
-                to= self._channel,
+                to=self._channel,
                 data=payload_buffer,
                 value=0
             )

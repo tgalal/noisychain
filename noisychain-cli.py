@@ -14,7 +14,9 @@ import sys
 import asyncio
 import logging
 import noisychain
-from noisychain import protocols
+from noisychain.protocols import MAGIC
+from noisychain.protocols import k
+from noisychain.protocols.k.initiator import KInitiatorProtocol
 
 """
 noisychain-cli send --role initiator --to-addr address --key /path/to/key --protocol k
@@ -27,11 +29,12 @@ noisychain-cli pubkey --key /path/to/key
 ADDRESS_EXAMPLES = ""
 PUBKEY_EXAMPLES = ""
 SEND_EXAMPLES = ""
+CHANNEL_EXAMPLES = ""
 RECV_EXAMPLES = ""
 EXAMPLES = ()
 
 PROTOCOLS = {
-    "k" : (protocols.KInitiatorProtocol,)
+    "K" : (KInitiatorProtocol,)
 };
 
 def read_data(source, fmt='raw', accept_stdin=False):
@@ -50,13 +53,64 @@ def read_data(source, fmt='raw', accept_stdin=False):
 
     return data
 
+def handle_channel(args):
+    key = read_data(args.key, fmt=args.key_format)
+    local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
+    if args.address:
+        remote_public = asyncio.run(ethutils.address_to_public(args.address))
+    elif args.pubkey:
+        remote_public = PublicKey(binascii.unhexlify(args.pubkey))
+    else:
+        print("Specify either an address or public key of the sender")
+        sys.exit(1)
+
+    channel = channels.derive_channel(local_static, remote_public, 0)
+    print(channel)
+
+
+def handle_recv(args):
+    initiator = args.role == "initiator"
+    key = read_data(args.key, fmt=args.key_format)
+    protocol_id = args.protocol
+    local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
+
+    if args.address:
+        remote_public = asyncio.run(ethutils.address_to_public(args.address))
+    elif args.pubkey:
+        remote_public = PublicKey(binascii.unhexlify(args.pubkey))
+    else:
+        print("Specify either an address or public key of the sender")
+        sys.exit(1)
+
+    if initiator:
+        pass
+    else:
+        protocol = PROTOCOLS[protocol_id][1](local_static, remote_public)
+        protocol.setup()
+
+        channel = protocol.channel
+        transactions = asyncio.run(
+                ethutils.get_transactions(to_address=channel))
+
+        transactions_data = map(
+                lambda tx: binascii.unhexlify(tx.input[2:]),
+                transactions)
+
+        messages = filter(
+                lambda data: data.startswith(MAGIC),
+                transactions_data)
+        i = 0
+        for message in messages:
+            plaintext = asyncio.run(protocol.recv(message))
+            print(f"Message [{i}]: {plaintext.decode().strip()}")
+            i += 1
 
 def handle_send(args):
     initiator = args.role == "initiator"
     key = read_data(args.key, fmt=args.key_format)
     protocol_id = args.protocol
     local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
-    message = sys.stdin.buffer.read()
+    message = sys.stdin.buffer.read().strip()
 
     if args.address:
         remote_public = asyncio.run(ethutils.address_to_public(args.address))
@@ -65,12 +119,12 @@ def handle_send(args):
     else:
         print("Specify either an address or public key of the recipient")
         sys.exit(1)
-        return
 
     if initiator:
         protocol = PROTOCOLS[protocol_id][0](
                 local_static, remote_public, message)
         protocol.setup()
+        print("\nSending...")
         txhash = asyncio.run(protocol.send())
         print(f"Sent: {txhash}")
 
@@ -123,7 +177,7 @@ if __name__ == '__main__':
     group.add_argument('-a', '--address', action='store', metavar=('ADDRESS'))
 
     pubkey_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
- 
+
     #####################
 
     send_parser = subparsers.add_parser('send',
@@ -133,7 +187,7 @@ if __name__ == '__main__':
     send_parser.set_defaults(func=handle_send)
     send_parser.add_argument('-d', '--debug', action="store_true")
 
-    send_parser.add_argument('-k', '--key', action='store', required=True)
+    send_parser.add_argument('-k', '--key', action='store')
     send_parser.add_argument('-r', '--role', action='store',
             choices=('initiator', 'responder'), required=True)
     send_parser.add_argument('-p', '--protocol', action='store',
