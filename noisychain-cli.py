@@ -12,8 +12,10 @@ import asyncio
 import logging
 import noisychain
 from noisychain.protocols import MAGIC
+from noisychain.protocols import k
 from noisychain.protocols.k.initiator import KInitiatorProtocol
 from noisychain.protocols.k.responder import KResponderProtocol
+from noisychain.protocols import n
 from noisychain.protocols.n.initiator import NInitiatorProtocol
 from noisychain.protocols.n.responder import NResponderProtocol
 from noisychain import channels
@@ -79,8 +81,8 @@ python noisychain-cli.py fund \\
 EXAMPLES = ()
 
 PROTOCOLS = {
-    "K" : (KInitiatorProtocol, KResponderProtocol),
-    "N" : (NInitiatorProtocol, NResponderProtocol),
+    "K" : (k.PROTOCOL_IDENTIFIER_BYTES, KInitiatorProtocol, KResponderProtocol),
+    "N" : (n.PROTOCOL_IDENTIFIER_BYTES, NInitiatorProtocol, NResponderProtocol),
 };
 ONEWAY_PROTOCOLS = ("K", "N")
 
@@ -149,7 +151,8 @@ def handle_recv(args):
             print("Specify either an address or public key of the sender")
             sys.exit(1)
 
-    Protocol = PROTOCOLS[protocol_id][0 if initiator else 1]
+    protocol_identifier_bytes, InitiatorProtocol, ResponderProtocol = \
+            PROTOCOLS[protocol_id]
 
     if initiator:
         raise Exception("Not yet supported")
@@ -157,28 +160,28 @@ def handle_recv(args):
         address = ethutils.pubkey_to_address(local_static.public)
         if protocol_id == "K":
             assert remote_public, "Protocol requires specifing --pubkey"
-            protocol = Protocol(local_static, remote_public)
+            protocol = ResponderProtocol(local_static, remote_public)
             protocol.setup()
             address = protocol.channel
         elif protocol_id == "N":
-            protocol = Protocol(local_static)
+            protocol = ResponderProtocol(local_static)
         else:
             raise Exception("Unsupported")
 
         transactions = asyncio.run(
                 ethutils.get_transactions(to_address=address))
 
-        transactions_data = map(
-                lambda tx: binascii.unhexlify(tx.input[2:]),
+        transactions_with_messages = filter(
+                lambda tx: binascii.unhexlify(tx.input[2:]).startswith(
+                    MAGIC + protocol_identifier_bytes),
                 transactions)
 
-        messages = filter(
-                lambda data: data.startswith(MAGIC),
-                transactions_data)
         i = 0
-        for message in messages:
-            plaintext = asyncio.run(protocol.recv(message))
-            print(f"Message [{i}]: {plaintext.decode().strip()}")
+        for tx in transactions_with_messages:
+            sender, plaintext = asyncio.run(protocol.recv(tx))
+            sender = sender or "Unknown sender"
+            # print(f"Message [{i}]: {plaintext.decode().strip()}")
+            print(f"[{sender}]: {plaintext.decode().strip()}")
             i += 1
 
 def handle_send(args):
@@ -209,7 +212,7 @@ def handle_send(args):
         sys.exit(1)
 
     if initiator:
-        Protocol = PROTOCOLS[protocol_id][0]
+        Protocol = PROTOCOLS[protocol_id][1]
         if protocol_id == "K":
             protocol = Protocol(local_static, remote_public, message)
             protocol.setup()

@@ -2,9 +2,10 @@ from dissononce.extras.dh.experimental.secp256k1.keypair import KeyPair
 from dissononce.extras.meta.protocol.factory import NoiseProtocolFactory
 from dissononce.processing.handshakepatterns.oneway.N import NHandshakePattern
 import logging
+import binascii
 
 from .. import MAGIC
-from . import PROTOCOL_ID
+from . import PROTOCOL_IDENTIFIER_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +18,13 @@ class NResponderProtocol:
         self._noise = NoiseProtocolFactory().get_noise_protocol(
                 "Noise_N_secp256k1_AESGCM_SHA256")
 
-    async def recv(self, payload: bytes):
+    async def recv(self, transaction):
         logger.debug("recv()")
-        assert payload.startswith(MAGIC)
-        assert payload[len(MAGIC)] == PROTOCOL_ID
+        payload = binascii.unhexlify(transaction.input[2:])
+        assert payload.startswith(MAGIC + PROTOCOL_IDENTIFIER_BYTES)
 
         # Strip magic and paload id
-        payload = payload[len(MAGIC) + 1:]
+        payload = payload[len(MAGIC + PROTOCOL_IDENTIFIER_BYTES):]
 
         ############## Noise init
         handshakestate = self._noise.create_handshakestate()
@@ -35,4 +36,4 @@ class NResponderProtocol:
         message_buffer = bytearray()
         handshakestate.read_message(payload, message_buffer)
 
-        return bytes(message_buffer)
+        return None, bytes(message_buffer)

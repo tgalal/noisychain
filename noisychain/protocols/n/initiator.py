@@ -7,7 +7,7 @@ import logging
 
 from ... import ethutils
 from ...ethutils.funding import ExternalFunder
-from . import PROTOCOL_ID
+from . import PROTOCOL_IDENTIFIER_BYTES
 from .. import MAGIC
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class NInitiatorProtocol:
 
         payload_buffer = bytearray()
         handshakestate.write_message(self._message, payload_buffer)
-        payload_buffer = MAGIC + PROTOCOL_ID.to_bytes(1, 'big') + payload_buffer
+        payload_buffer = MAGIC + PROTOCOL_IDENTIFIER_BYTES + payload_buffer
 
         local_ephemeral = handshakestate.e
         local_ephemeral_address = ethutils.pubkey_to_address(
