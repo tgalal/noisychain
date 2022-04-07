@@ -25,8 +25,5 @@ class InternalFunder:
             logger.debug("Waiting for Tx Hash: "
                 f"0x{binascii.hexlify(signed.hash).decode()}")
 
-            while balance < value:
-                await asyncio.sleep(5)
-                balance = await ethutils.get_balance(address)
-
+            await asyncio.sleep(5)
         return True
