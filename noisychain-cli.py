@@ -12,12 +12,19 @@ import asyncio
 import logging
 import noisychain
 from noisychain.protocols import MAGIC
+########
 from noisychain.protocols import k
 from noisychain.protocols.k.initiator import KInitiatorProtocol
 from noisychain.protocols.k.responder import KResponderProtocol
+########
 from noisychain.protocols import n
 from noisychain.protocols.n.initiator import NInitiatorProtocol
 from noisychain.protocols.n.responder import NResponderProtocol
+########
+from noisychain.protocols import x
+from noisychain.protocols.x.initiator import XInitiatorProtocol
+from noisychain.protocols.x.responder import XResponderProtocol
+########
 from noisychain import channels
 from noisychain.ethutils import funding
 
@@ -83,8 +90,9 @@ EXAMPLES = ()
 PROTOCOLS = {
     "K" : (k.PROTOCOL_IDENTIFIER_BYTES, KInitiatorProtocol, KResponderProtocol),
     "N" : (n.PROTOCOL_IDENTIFIER_BYTES, NInitiatorProtocol, NResponderProtocol),
+    "X" : (x.PROTOCOL_IDENTIFIER_BYTES, XInitiatorProtocol, XResponderProtocol),
 };
-ONEWAY_PROTOCOLS = ("K", "N")
+ONEWAY_PROTOCOLS = ("K", "N", "X")
 
 def read_data(source, fmt='raw', accept_stdin=False):
     if source == "-" and accept_stdin:
@@ -163,7 +171,7 @@ def handle_recv(args):
             protocol = ResponderProtocol(local_static, remote_public)
             protocol.setup()
             address = protocol.channel
-        elif protocol_id == "N":
+        elif protocol_id in ("N", "X"):
             protocol = ResponderProtocol(local_static)
         else:
             raise Exception("Unsupported")
@@ -193,7 +201,7 @@ def handle_send(args):
     else:
         initiator = args.role == "initiator"
 
-    if protocol_id in ("K",):
+    if protocol_id in ("K", "X"):
         assert args.key, "Specified protocol requires passing --key KEY"
         key = read_data(args.key, fmt=args.key_format)
         local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
@@ -218,6 +226,8 @@ def handle_send(args):
             protocol.setup()
         elif protocol_id == "N":
             protocol = Protocol(remote_public, message)
+        elif protocol_id == "X":
+            protocol = Protocol(local_static, remote_public, message)
         else:
             raise Exception(f"Unsupported protocol: {protocol_id}")
 
