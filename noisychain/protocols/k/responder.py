@@ -20,6 +20,8 @@ class KResponderProtocol:
 
         self._local_static = local_static
         self._remote_static = remote_static
+        self._protocol = NoiseProtocolFactory().get_noise_protocol(
+                "Noise_K_secp256k1_AESGCM_SHA256")
 
     @property
     def channel(self):
@@ -40,9 +42,7 @@ class KResponderProtocol:
         payload = payload[len(MAGIC + PROTOCOL_IDENTIFIER_BYTES):]
 
         ############## Noise init
-        protocol = NoiseProtocolFactory().get_noise_protocol(
-                "Noise_K_secp256k1_AESGCM_SHA256")
-        handshakestate = protocol.create_handshakestate()
+        handshakestate = self._protocol.create_handshakestate()
         handshakestate.initialize(KHandshakePattern(), False, b'',
                 s=self._local_static, rs=self._remote_static)
 

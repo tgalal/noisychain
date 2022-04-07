@@ -26,8 +26,8 @@ class KInitiatorProtocol:
         self._local_static = local_static
         self._remote_static = remote_static
         self._message = message
-
-        logger.debug("Initialized K Protocol for Initiator")
+        self._protocol = NoiseProtocolFactory().get_noise_protocol(
+                "Noise_K_secp256k1_AESGCM_SHA256")
 
     def setup(self):
         logger.debug("setup()")
@@ -38,11 +38,10 @@ class KInitiatorProtocol:
     async def send(self) -> str | None:
         logger.debug("send()")
         ############## Noise init
-        protocol = NoiseProtocolFactory().get_noise_protocol(
-                "Noise_K_secp256k1_AESGCM_SHA256")
-        handshakestate = protocol.create_handshakestate()
+        handshakestate = self._protocol.create_handshakestate()
         handshakestate.initialize(KHandshakePattern(), True, b'',
                 s=self._local_static, rs=self._remote_static)
+        logger.debug("Initialized K Protocol for Initiator")
         ######################
 
         payload_buffer = bytearray()
