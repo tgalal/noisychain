@@ -27,10 +27,11 @@ async def get_balance(address: str) -> int:
     result = w3.eth.get_balance(address)
     return result
 
-async def get_transactions(from_address=None, to_address=None, start_block=0,
+async def get_transactions(from_address=None, to_addresses=None, start_block=0,
         only_first=False) -> List:
+    to_addresses = to_addresses or []
     logger.debug(f"get_transaction(from_address={from_address}, "
-                 f"to_address={to_address}, start_block={start_block}, "
+                 f"to_address={to_addresses}, start_block={start_block}, "
                  f"only_first={only_first})")
     blocks = w3.eth.get_block_number()
     output = []
@@ -43,8 +44,8 @@ async def get_transactions(from_address=None, to_address=None, start_block=0,
 
             if from_address:
                 found = found and t["from"] == from_address
-            if to_address:
-                found = found and t["to"] == to_address
+            if len(to_addresses):
+                found = found and t["to"] in to_addresses
 
             if found:
                 if only_first:

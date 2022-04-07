@@ -138,59 +138,79 @@ def handle_channel(args):
     print(channel)
 
 def handle_recv(args):
-    protocol_id = args.protocol
+    assert args.protocol or args.role, "Specify either a protocol or role"
+    assert not (args.protocol in ONEWAY_PROTOCOLS and args.role == "initiator")
 
-    if protocol_id in ONEWAY_PROTOCOLS:
-        assert args.role in ("responder", None)
-        initiator = False
+    if args.protocol is None:
+        protocol_ids = ("X", "N", "K")
     else:
-        initiator = args.role == "initiator"
-    key = read_data(args.key, fmt=args.key_format)
-    local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
+        protocol_ids = (args.protocol,)
+
+    multi_mode = len(protocol_ids) > 1
+
+    if multi_mode:
+        sys.stderr.write("Multi Protocol Mode\n")
+        sys.stderr.write(f"Receiving messages for {protocol_ids} protocols\n")
+    else:
+        sys.stderr.write("Single Protocol Mode\n")
+        sys.stderr.write(f"Receiving messages for {protocol_ids[0]} protocol\n")
+
+    if args.key:
+        key = read_data(args.key, fmt=args.key_format)
+        local_static = SECP256K1DH().generate_keypair(PrivateKey(key))
+    else:
+        local_static = None
     remote_public = None
 
     # The following protocols require a remote static key
-    if protocol_id in ("K",):
+    if "K" in protocol_ids:
         if args.address:
             remote_public = asyncio.run(ethutils.address_to_public(args.address))
         elif args.pubkey:
             remote_public = PublicKey(binascii.unhexlify(args.pubkey))
-        else:
-            print("Specify either an address or public key of the sender")
-            sys.exit(1)
 
-    protocol_identifier_bytes, InitiatorProtocol, ResponderProtocol = \
-            PROTOCOLS[protocol_id]
+    protocol_handlers = {};
+    addresses = []
+    for protocol_id in protocol_ids:
+        try:
+            if protocol_id == "K":
+                assert local_static
+                assert remote_public, "Remote public required"
+                protocol = KResponderProtocol(local_static, remote_public)
+                protocol.setup()
+                protocol_handlers[k.PROTOCOL_IDENTIFIER_BYTES] = protocol
+                addresses.append(protocol.channel)
+            elif protocol_id == "N":
+                assert local_static
+                protocol_handlers[n.PROTOCOL_IDENTIFIER_BYTES] = \
+                        NResponderProtocol(local_static)
+                addresses.append(ethutils.pubkey_to_address(local_static.public))
+            elif protocol_id == "X":
+                assert local_static
+                protocol_handlers[x.PROTOCOL_IDENTIFIER_BYTES] = \
+                        XResponderProtocol(local_static)
+                addresses.append(ethutils.pubkey_to_address(local_static.public))
+            else:
+                raise Exception("Not supported")
+        except AssertionError as e:
+            if not multi_mode:
+                raise
+            else:
+                sys.stderr.write( f"Ignoring protocol {protocol_id}: "
+                                  f"{e}\n")
+    assert len(addresses)
+    sys.stderr.write("\nMessages:\n\n")
+    transactions = asyncio.run(
+            ethutils.get_transactions(to_addresses=addresses))
 
-    if initiator:
-        raise Exception("Not yet supported")
-    else:
-        address = ethutils.pubkey_to_address(local_static.public)
-        if protocol_id == "K":
-            assert remote_public, "Protocol requires specifing --pubkey"
-            protocol = ResponderProtocol(local_static, remote_public)
-            protocol.setup()
-            address = protocol.channel
-        elif protocol_id in ("N", "X"):
-            protocol = ResponderProtocol(local_static)
-        else:
-            raise Exception("Unsupported")
-
-        transactions = asyncio.run(
-                ethutils.get_transactions(to_address=address))
-
-        transactions_with_messages = filter(
-                lambda tx: binascii.unhexlify(tx.input[2:]).startswith(
-                    MAGIC + protocol_identifier_bytes),
-                transactions)
-
-        i = 0
-        for tx in transactions_with_messages:
-            sender, plaintext = asyncio.run(protocol.recv(tx))
-            sender = sender or "Unknown sender"
-            # print(f"Message [{i}]: {plaintext.decode().strip()}")
-            print(f"[{sender}]: {plaintext.decode().strip()}")
-            i += 1
+    for tx in transactions:
+        for identifier_bytes, protocol in protocol_handlers.items():
+            if binascii.unhexlify(tx.input[2:]).startswith(
+                    MAGIC + identifier_bytes
+                    ):
+                sender, plaintext = asyncio.run(protocol.recv(tx))
+                sender = sender or "Unknown sender"
+                print(f"[{sender}]: {plaintext.decode().strip()}")
 
 def handle_send(args):
     protocol_id = args.protocol
@@ -335,7 +355,7 @@ if __name__ == '__main__':
     recv_parser.add_argument('-r', '--role', action='store',
             choices=('initiator', 'responder'), required=False)
     recv_parser.add_argument('-p', '--protocol', action='store',
-            choices=PROTOCOLS.keys(), required=True)
+            choices=PROTOCOLS.keys())
 
     group = recv_parser.add_mutually_exclusive_group(required=False)
     group.add_argument('-K', '--pubkey', action='store')
