@@ -19,6 +19,7 @@ from noisychain.protocols import k
 from noisychain.protocols.k.initiator import KInitiatorProtocol
 from noisychain.protocols.k.responder import KResponderProtocol
 from noisychain import channels
+from noisychain.ethutils import funding
 
 """
 noisychain-cli send --role initiator --to-addr address --key /path/to/key --protocol k
@@ -33,6 +34,16 @@ PUBKEY_EXAMPLES = ""
 SEND_EXAMPLES = ""
 CHANNEL_EXAMPLES = ""
 RECV_EXAMPLES = ""
+FUND_EXAMPLES = """
+Fund Examples
+=============
+
+python noisychain-cli.py fund \\
+        --key data/alice.bin --key-format hex \\
+        --address 0x69A11f901e48D85AE1dEB516627F45DCC1190f3C \\
+        --method external \\
+        --value 2576000000000000
+"""
 EXAMPLES = ()
 
 PROTOCOLS = {
@@ -54,6 +65,19 @@ def read_data(source, fmt='raw', accept_stdin=False):
         data = data.decode()
 
     return data
+
+def handle_fund(args):
+    key = read_data(args.key, fmt=args.key_format)
+    keypair = SECP256K1DH().generate_keypair(PrivateKey(key))
+
+    if args.method == 'internal':
+        funder = funding.InternalFunder(keypair.private)
+    elif args.method == 'external':
+        funder = funding.ExternalFunder()
+    else:
+        raise Exception(f"Unsupported funding method: {args.method}")
+
+    asyncio.run(funder.fund(args.address, args.value))
 
 def handle_channel(args):
     key = read_data(args.key, fmt=args.key_format)
@@ -237,6 +261,23 @@ if __name__ == '__main__':
     group.add_argument('-a', '--address', action='store')
 
     recv_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
+
+    #####################
+
+    fund_parser = subparsers.add_parser('fund',
+            aliases=['f'],
+            epilog=FUND_EXAMPLES,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    fund_parser.set_defaults(func=handle_fund)
+    fund_parser.add_argument('-d', '--debug', action="store_true")
+
+    fund_parser.add_argument('-k', '--key', action='store', required=True)
+    fund_parser.add_argument('-m', '--method', action='store',
+            choices=('internal', 'tornado', 'external'), default='internal')
+    fund_parser.add_argument('-a', '--address', action='store')
+    fund_parser.add_argument('-v', '--value', action='store', type=int)
+
+    fund_parser.add_argument('--key-format', action='store', choices=('raw', 'hex'))
 
     args = parser.parse_args()
     if args.debug:
