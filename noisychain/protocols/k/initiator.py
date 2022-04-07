@@ -22,12 +22,10 @@ class KInitiatorProtocol:
             local_static: KeyPair,
             remote_static: PublicKey,
             message: bytes):
+
         self._local_static = local_static
         self._remote_static = remote_static
         self._message = message
-
-        ############## Funder init
-        self._funder = InternalFunder(self._local_static.private)
 
         logger.debug("Initialized K Protocol for Initiator")
 
@@ -67,7 +65,8 @@ class KInitiatorProtocol:
         logger.debug(
             f"Estimated cost is {Web3.fromWei(estimated_cost, 'ether')} ether")
 
-        await self._funder.fund(local_ephemeral_address, estimated_cost)
+        await InternalFunder(self._local_static.private).fund(
+                local_ephemeral_address, estimated_cost)
         await ethutils.send(signed)
 
         logger.info("Sent")

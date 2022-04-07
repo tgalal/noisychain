@@ -1,14 +1,10 @@
-from dissononce.extras.dh.experimental.secp256k1.secp256k1 \
-        import SECP256K1DH
 from dissononce.extras.dh.experimental.secp256k1.keypair import KeyPair
 from dissononce.extras.dh.experimental.secp256k1.public import PublicKey
 from dissononce.extras.meta.protocol.factory import NoiseProtocolFactory
 from dissononce.processing.handshakepatterns.oneway.K import KHandshakePattern
-from web3 import Web3
 import logging
 
 from ...channels import derive_channel
-from ... import ethutils
 from .. import MAGIC
 from . import PROTOCOL_ID
 
