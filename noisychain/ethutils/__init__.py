@@ -99,17 +99,25 @@ async def send(tx):
 
 async def create_and_sign_transaction(
         key: PrivateKey,
-        to: str,
+        to: str | PublicKey,
         data: bytes = b'',
         value: int=0):
     logger.debug(
         f"send_transaction(key=[..], to={to}, data=[..], value={value})")
 
-    sender_address = pubkey_to_address(
+    sender_address : str = pubkey_to_address(
         private_to_public(key)
     )
+
+    if type(to) is str:
+        receiver_address : str = to
+    elif type(to) is PublicKey:
+        receiver_address = pubkey_to_address(to)
+    else:
+        raise "Unsupported destination type: %s" % type(to)
+
     tx = create_transaction(
-            to, data, value,
+            receiver_address, data, value,
             chain_id=1337,
             nonce=w3.eth.get_transaction_count(sender_address)
         )
