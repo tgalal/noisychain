@@ -9,21 +9,22 @@ from ... import ethutils
 logger = logging.getLogger(__name__)
 
 
-class InternalFunder:
+class InternalFunder(Funder):
     def __init__(self, key: PrivateKey):
         self._key = key
 
     async def fund(self, address: str, value: int) -> bool:
-        logger.debug(f"fund_account({address}, {value})")
+        funder_address = ethutils.privkey_to_address(self._key)
+        logger.debug(f"fund_account({funder_address} => {address}, {value})")
         balance = await ethutils.get_balance(address)
 
         if balance < value:
             _, signed = await ethutils.create_and_sign_transaction(
-                    self._key, address, value=value)
+                    self._key, address, value=value - balance)
             await ethutils.send(signed)
 
             logger.debug("Waiting for Tx Hash: "
                 f"0x{binascii.hexlify(signed.hash).decode()}")
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
         return True
