@@ -1,3 +1,4 @@
+from dissononce.dh import private
 from dissononce.extras.dh.experimental.secp256k1.public \
         import PublicKey
 from dissononce.extras.dh.experimental.secp256k1.private \
@@ -23,9 +24,30 @@ w3 = Web3(Web3.HTTPProvider('http://192.168.178.11:7545'))
 # w3 = Web3(Web3.AsyncHTTPProvider("http://192.168.178.11:7545"), modules={'eth':
 #     (AsyncEth,)}, middlewares=[])
 
+
+def ecrecover(t):
+    s = w3.eth.account._keys.Signature(
+            vrs=(to_standard_v(
+                    extract_chain_id(t.v)[1]),
+        w3.toInt(t.r), w3.toInt(t.s)))
+
+    tt = { k:t[k] for k in ALLOWED_TRANSACTION_KEYS - {'chainId', 'data'}}
+    tt['data']=t.input
+    tt['chainId']=extract_chain_id(t.v)[0]
+    ut=serializable_unsigned_transaction_from_dict(tt)
+
+    pubkey = s.recover_public_key_from_msg_hash(ut.hash())
+    result = PublicKey(pubkey.to_compressed_bytes())
+
+    return result
+
 async def get_balance(address: str) -> int:
+    logger.debug(f"get_balance(address)")
     result = w3.eth.get_balance(address)
     return result
+
+async def get_transaction(txhash: str):
+    return w3.eth.get_transaction(txhash)
 
 async def get_transactions(from_address=None, to_addresses=None, start_block=0,
         only_first=False) -> List:
@@ -90,6 +112,9 @@ def decompress_publickey(publickey: PublicKey) -> Tuple[int, int]:
     y = ecdh.public_key.pubkey.point.y()
     return (x, y)
 
+def privkey_to_address(privatekey: PrivateKey) -> str:
+    return pubkey_to_address(private_to_public(privatekey))
+
 def pubkey_to_address(publickey: PublicKey) -> str:
     x, y = decompress_publickey(publickey)
     hashed = Web3.keccak(x.to_bytes(32, 'big') + y.to_bytes(32, 'big'))
@@ -104,7 +129,7 @@ async def create_and_sign_transaction(
         data: bytes = b'',
         value: int=0):
     logger.debug(
-        f"send_transaction(key=[..], to={to}, data=[..], value={value})")
+        f"create_and_sign_transaction(key=[..], to={to}, data=[..], value={value})")
 
     sender_address : str = pubkey_to_address(
         private_to_public(key)
@@ -115,7 +140,7 @@ async def create_and_sign_transaction(
     elif type(to) is PublicKey:
         receiver_address = pubkey_to_address(to)
     else:
-        raise "Unsupported destination type: %s" % type(to)
+        raise Exception("Unsupported destination type: %s" % type(to))
 
     tx = create_transaction(
             receiver_address, data, value,
