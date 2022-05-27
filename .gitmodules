@@ -1,0 +1,3 @@
+[submodule "dissononce"]
+	path = dissononce
+	url = git@github.com:tgalal/dissononce.git
