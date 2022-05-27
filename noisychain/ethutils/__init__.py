@@ -16,14 +16,13 @@ from eth_account._utils.signing import to_standard_v, extract_chain_id
 from eth_account._utils.legacy_transactions import ALLOWED_TRANSACTION_KEYS, serializable_unsigned_transaction_from_dict
 import asyncio
 import json
+import os
 from typing import Tuple, List
 
 logger = logging.getLogger(__name__)
 
-w3 = Web3(Web3.HTTPProvider('http://192.168.178.11:7545'))
-# w3 = Web3(Web3.AsyncHTTPProvider("http://192.168.178.11:7545"), modules={'eth':
-#     (AsyncEth,)}, middlewares=[])
-
+rpc = os.environ["W3RPC"]
+w3 = Web3(Web3.HTTPProvider(rpc))
 
 def ecrecover(t):
     s = w3.eth.account._keys.Signature(
