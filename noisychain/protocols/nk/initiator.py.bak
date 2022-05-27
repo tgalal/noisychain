@@ -1,0 +1,153 @@
+import binascii
+from dissononce.extras.dh.experimental.secp256k1.private import PrivateKey
+from dissononce.extras.dh.experimental.secp256k1.public import PublicKey
+from dissononce.extras.dh.experimental.secp256k1.keypair import KeyPair
+from dissononce.extras.dh.experimental.secp256k1.secp256k1 import SECP256K1DH
+from dissononce.processing.handshakepatterns.interactive.NK import \
+        NKHandshakePattern
+from dissononce.processing.impl.handshakestate import HandshakeState
+from dissononce.processing.impl.symmetricstate import SymmetricState
+from dissononce.processing.impl.cipherstate import CipherState
+from dissononce.cipher.aesgcm import AESGCMCipher
+from dissononce.hash.sha256 import SHA256Hash
+from dissononce.extras.dh.dangerous.dh_nogen import NoGenDH
+
+from web3 import Web3
+import logging
+import base64
+import json
+import hashlib
+import os
+
+from ... import ethutils
+from ...ethutils.funding import InternalFunder
+from . import PROTOCOL_IDENTIFIER_BYTES
+from .. import MAGIC
+from ... import channels
+
+logger = logging.getLogger(__name__)
+
+class ProtocolState:
+    phase = 0
+    h = None
+    k = None
+    ck = None
+    local_ephemeral = None
+    channel_ephemeral = None
+
+class NKInitiatorProtocol:
+    def __init__(self,
+            local_static: KeyPair,
+            remote_static: PublicKey,
+            message: bytes
+        ):
+        self._local_static = local_static
+        self._remote_static = remote_static
+        self._message = message
+
+        ############## Noise init
+        self._symmetricstate = SymmetricState(
+                CipherState(AESGCMCipher()), SHA256Hash())
+        ############## Load state
+        self._restore_state()
+
+    def setup(self):
+        self._channel = ethutils.pubkey_to_address(self._remote_static)
+
+    def _restore_state(self):
+        self._state = self._read_state()
+
+        if len(self._state):
+            self._handshakestate = HandshakeState(self._symmetricstate,
+                    NoGenDH(SECP256K1DH(), PrivateKey(self._state[0]["e"])))
+        else:
+            self._handshakestate = HandshakeState(self._symmetricstate, SECP256K1DH())
+            self.setup()
+
+        self._handshakestate.initialize(
+                NKHandshakePattern(), True, b'',
+                rs=self._remote_static)
+
+        for i in range(0, len(self._state)):
+            state_item = self._state[i]
+            self._channel = state_item["channel"]
+            self._handshakestate.write_message(state_item["message"],
+                    bytearray())
+            assert self._handshakestate.symmetricstate.get_handshake_hash() \
+                    == state_item["h"]
+
+    def _get_state_file(self):
+        name = hashlib.sha256(self._local_static.public.data +\
+                self._remote_static.data).hexdigest()[:12]
+        return f"/tmp/states/{name}"
+
+    def _read_state(self) -> list:
+        state_file = self._get_state_file()
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                state = json.loads(f.read())
+                for key in ("h", "e", "message"):
+                    for item in state:
+                        if key in item:
+                            item[key] = base64.b64decode(item[key])
+                return state
+        return []
+
+    def _save_state(self):
+        for key in ("h", "e", "message"):
+            for item in self._state:
+                if key in item:
+                    item[key] = base64.b64encode(item[key]).decode()
+
+        state_file = self._get_state_file()
+        with open(state_file, 'w') as f:
+            f.write(json.dumps(self._state, indent=2))
+
+    async def send(self) -> str | None:
+        logger.debug("send()")
+        assert len(self._state) != 1, "Protocol is in receiving state"
+
+        payload_buffer = bytearray()
+        self._handshakestate.write_message(self._message, payload_buffer)
+        next_channel_keypair = SECP256K1DH().generate_keypair()
+
+        payload_buffer = MAGIC + \
+                PROTOCOL_IDENTIFIER_BYTES + \
+                next_channel_keypair.public.data + \
+                payload_buffer
+
+        local_ephemeral = self._handshakestate.e
+        local_ephemeral_address = ethutils.pubkey_to_address(
+               local_ephemeral.public)
+
+        tx, signed = await ethutils.create_and_sign_transaction(
+                key=local_ephemeral.private,
+                to=self._channel,
+                data=payload_buffer,
+                value=0
+            )
+
+        estimated_cost = tx['gas'] * tx['gasPrice']
+        logger.debug(f"Payload is {len(payload_buffer)} bytes")
+        logger.debug(
+            f"Estimated cost is {Web3.fromWei(estimated_cost, 'ether')} ether")
+
+        await InternalFunder(self._local_static.private).fund(
+                local_ephemeral_address, estimated_cost)
+        await ethutils.send(signed)
+
+        channel = channels.derive_channel(next_channel_keypair,
+                self._remote_static, 0)
+
+        self._state.append({
+            "e": self._handshakestate.e.private.data,
+            "channel": channel,
+            "sent": True,
+            "message": self._message,
+            "h": self._handshakestate.symmetricstate.get_handshake_hash()
+        })
+        self._save_state()
+
+        logger.info("Sent")
+        return binascii.hexlify(signed.hash).decode()
+
