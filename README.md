@@ -5,7 +5,11 @@
 Install dependencies
 
 ```
+git submodule update --init
 pip install -r requirements.txt
+
+# For testing
+pip install pytest
 ```
 
 Set RPC URL as env variable:
@@ -13,6 +17,12 @@ Set RPC URL as env variable:
 ```
 # Example
 export W3RPC="http://192.168.178.11:7545"
+```
+
+Include dissononce in path:
+
+```
+export PYTHONPATH=./dissononce/
 ```
 
 ## N-Based messaging
